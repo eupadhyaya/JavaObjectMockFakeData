@@ -1,4 +1,8 @@
+package gov.michigan.mdot.lamda.mock.data;
+
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.ParameterizedType;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -155,25 +159,33 @@ public class MockBeanData {
 					objList.add(obj2);
 					field.set(obj, objList);
 				}
-			}else if (field.getType().equals(Map.class)) {
+			} else if (field.getType().equals(Map.class)) {
+				boolean accessible = field.isAccessible();
+				if (!accessible)
+					field.setAccessible(true);
 				if (userValues != null && userValues.containsKey(field.getName()))
 					field.set(obj, userValues.get(field.getName()));
 				else {
 					ParameterizedType listType = (ParameterizedType) field.getGenericType();
-					Class<?> classType = (Class<?>) listType.getActualTypeArguments()[0];
-					Field[] childFields = classType.getDeclaredFields();
-					Object obj2 = classType.newInstance();
-					for (Field childField : childFields) {
-						if (!"serialVersionUID".equalsIgnoreCase(childField.getName())) {
-							createFieldValues(childField, obj2, className, customFields);
-						}
+					Object key = null;
+					Object value = null;
+					if (listType.getActualTypeArguments()[0] instanceof ParameterizedType) {
+						key = setMapData(field, obj, className, customFields, accessible, listType);
+					} else {
+						Class<?> classTypeKey = (Class<?>) listType.getActualTypeArguments()[0];
+						key = getMapData(classTypeKey, key);
 					}
-					boolean accessible = field.isAccessible();
+					if (listType.getActualTypeArguments()[1] instanceof ParameterizedType) {
+						value = setMapData(field, obj, className, customFields, accessible, listType);
+					} else {
+						Class<?> classTypeValue = (Class<?>) listType.getActualTypeArguments()[1];
+						value = getMapData(classTypeValue, key);
+					}
 					if (!accessible)
 						field.setAccessible(true);
-					Map<Object, Object> objList = new HashMap<Object, Object>();
-					objList.put(field.getName(), obj2);
-					field.set(obj, objList);
+					Map<Object, Object> objMap = new HashMap<Object, Object>();
+					objMap.put(key, value);
+					field.set(obj, objMap);
 				}
 			} else if (field.getType().equals(MultipartFile.class)) {
 				MockMultipartFile file = new MockMultipartFile("data", "test.txt", "text/plain",
@@ -237,4 +249,63 @@ public class MockBeanData {
 
 	}
 
+	/**
+	 * @param listType
+	 * @param key
+	 * @return
+	 * @throws ClassNotFoundException
+	 * @throws NoSuchMethodException
+	 * @throws InstantiationException
+	 * @throws IllegalAccessException
+	 * @throws InvocationTargetException
+	 */
+	public Object getMapData(Class<?> classType, Object key) throws ClassNotFoundException, NoSuchMethodException,
+			InstantiationException, IllegalAccessException, InvocationTargetException {
+		if (classType.isInstance(new Integer(0))) {
+			Class<?> classInteger = Class.forName("java.lang.Integer");
+			Constructor<?> constructor = classInteger.getConstructor(new Class[] { int.class });
+			key = constructor.newInstance(1);
+		} else if (classType.isInstance(new BigDecimal(0)) || classType.isInstance(new Double(0))) {
+			Class<?> classDouble = Class.forName("java.lang.BigDecimal");
+			Constructor<?> constructor = classDouble.getConstructor(new Class[] { double.class });
+			key = constructor.newInstance(1);
+		} else if (classType.isInstance(new String(""))) {
+			Class<?> classString = Class.forName("java.lang.String");
+			Constructor<?> constructor = classString.getConstructor(new Class[] { String.class });
+			key = constructor.newInstance("Test");
+		}
+		return key;
+	}
+
+	/**
+	 * @param field
+	 * @param obj
+	 * @param className
+	 * @param customFields
+	 * @param accessible
+	 * @param listType
+	 * @return
+	 * @throws InstantiationException
+	 * @throws IllegalAccessException
+	 * @throws Exception
+	 */
+	public Object setMapData(Field field, Object obj, String className, Map<String, Object> customFields,
+			boolean accessible, ParameterizedType listType)
+			throws InstantiationException, IllegalAccessException, Exception {
+		Class<?> classRawType;
+		ParameterizedType paramTypeImpl = (ParameterizedType) listType.getActualTypeArguments()[1];
+		if (paramTypeImpl.getActualTypeArguments() != null && paramTypeImpl.getActualTypeArguments().length > 0) {
+			classRawType = (Class<?>) paramTypeImpl.getActualTypeArguments()[0];
+			Field[] childFields = classRawType.getDeclaredFields();
+			Object obj2 = classRawType.newInstance();
+			for (Field childField : childFields) {
+				if (!"serialVersionUID".equalsIgnoreCase(childField.getName())) {
+					createFieldValues(childField, obj2, className, customFields);
+				}
+			}
+
+			return obj2;
+		} else
+			return obj;
+	}
 }
